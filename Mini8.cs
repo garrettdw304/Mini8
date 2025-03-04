@@ -16,8 +16,8 @@
 
         private byte a;
         private byte x;
-        private byte stack;
-        private byte page; // TODO: Utilize
+        private byte stackIndex;
+        private byte stackPage;
         private byte flags;
         private ushort pc;
         private byte tempContext;
@@ -67,7 +67,7 @@
                 {
                     CONTEXT_A => a,
                     CONTEXT_X => x,
-                    CONTEXT_STACK => stack,
+                    CONTEXT_STACK => stackIndex,
                     CONTEXT_FLAGS => flags,
                     _ =>throw new InvalidOperationException(
                         "Context is not a valid value."),
@@ -81,18 +81,19 @@
                 {
                     case CONTEXT_A: a = value; break;
                     case CONTEXT_X: x = value; break;
-                    case CONTEXT_STACK: stack = value; break;
+                    case CONTEXT_STACK: stackIndex = value; break;
                     case CONTEXT_FLAGS: flags = value; break;
                     default: throw new InvalidOperationException(
                         "Context is not a valid value.");
                 }
             }
         }
+        private ushort StackPointer => (ushort)(((stackPage << 8) | stackIndex) & 0x0F_FF);
 
         public Mini8(MemoryMap mem)
         {
             this.mem = mem;
-            pc = a = x = stack = page = flags = tempContext = 0;
+            pc = a = x = stackIndex = stackPage = flags = tempContext = 0;
             tempContextActive = tempContextActivated = false;
 
             instructions = new Instruction[256];
@@ -142,12 +143,12 @@
         #region Transfer
         private void Push(byte instruction)
         {
-            mem.Store(stack++, C);
+            PushStack(C);
         }
 
         private void Pop(byte instruction)
         {
-            C = mem.Load(--stack);
+            C = PopStack();
         }
 
         private void Mac(byte instruction)
@@ -162,12 +163,12 @@
 
         private void Msc(byte instruction)
         {
-            C = stack;
+            C = stackIndex;
         }
 
         private void Mpc(byte instruction)
         {
-            C = page;
+            C = stackPage;
         }
 
         private void Mfc(byte instruction)
@@ -187,12 +188,12 @@
 
         private void Mcs(byte instruction)
         {
-            stack = C;
+            stackIndex = C;
         }
 
         private void Mcp(byte instruction)
         {
-            page = C;
+            stackPage = C;
         }
 
         private void Mcf(byte instruction)
@@ -409,15 +410,27 @@
 
         private void PushForJump()
         {
-            mem.Store(stack++, flags);
-            mem.Store(stack++, (byte)pc);
-            mem.Store(stack++, (byte)(pc >> 8));
+            PushStack(flags);
+            PushStack((byte)pc);
+            PushStack((byte)(pc >> 8));
         }
 
         private void PopForReturn()
         {
-            pc = (ushort)((mem.Load(--stack) << 8) | mem.Load(--stack));
-            flags = mem.Load(--stack);
+            pc = (ushort)((PopStack() << 8) | PopStack());
+            flags = PopStack();
+        }
+
+        private byte PopStack()
+        {
+            stackIndex--;
+            return mem.Load(StackPointer);
+        }
+
+        private void PushStack(byte value)
+        {
+            mem.Store(StackPointer, value);
+            stackIndex++;
         }
 
         private byte GetRhs(byte instruction)
