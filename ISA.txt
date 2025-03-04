@@ -1,0 +1,208 @@
+All instructions are a single byte.
+Address space is 4096 bytes.
+
+REGISTERS
+A
+X
+Stack
+Flags
+Pc
+
+FLAGS
+zocd ddxx
+d - Don't Cares (not used yet)
+x - Context (0 = A, 1 = X, 2 = S, 3 = F)
+o - Overflow
+c - Carry
+z - Zero (Last result was zero)
+
+INSTRUCTIONS
+iml
+	Loads an immediate value into the lower part of C.
+	???? iiii
+	i - The immediate value.
+imh
+	Loads an immediate value into the upper part of C.
+	???? iiii
+	i - The immediate value.
+
+Arithmetic
+nand
+	A = A NAND value.
+	???? aaaa
+	a - The address of value.
+nor
+	A = A NOR value.
+	???? aaaa
+	a - The address of value.
+xnor
+	A = A XNOR value.
+	???? aaaa
+	a - The address of value.
+sh
+	A = A SHIFT value. Negative value shifts right, positive value shifts left.
+	???? aaaa
+	a - The address of value.
+add
+	A = A + value.
+	???? aaaa
+	a - The address of value.
+sub
+	Subtract from A.
+	???? aaaa
+	a - The address of value.
+ina
+	Increment A.
+inx
+	Increment X.
+dea
+	Decrement A.
+dex
+	Decrement X.
+
+Context
+Context instructions define the context for future instructions.
+Anywhere where C is used as a register, C is replaced with the context register.
+Temporarily -> for the next instruction.
+ca
+	Context is A.
+cx
+	Context is X.
+cs
+	Context is S.
+cf
+	Context is F.
+cta
+	Context is temporarily A.
+ctx
+	Context is temporarily X.
+cts
+	Context is temporarily S.
+ctf
+	Context is temporarily F.
+
+Transfers
+push
+	Push C.
+pop
+	Pop C.
+mac
+	Move A to C.
+mxc
+	Move X to C.
+msc
+	Move Stack to C.
+mfc
+	Move F to C.
+mca
+	Move C to A.
+mcx
+	Move C to X.
+mcs
+	Move C to Stack.
+mcf
+	Move C to F.
+sti
+	Store C at immediate.
+	???? iiii
+ldi
+	Load C from immediate.
+	???? iiii
+ste(xtended)
+	Store C at address where immediate is upper 4 bits and X is lower 8.
+	???? iiii
+lde(xtended)
+	Load C from address where immediate is upper 4 bits and X is lower 8.
+	???? iiii
+
+Branches
+ze
+	Zero Enabled. Zero = 1.
+zo
+	Zero if Overflow. Zero = Overflow.
+zc
+	Zero if Carry. Zero = Carry.
+zn
+	Zero not. Zero = NOT Zero.
+bi
+	Branch to offset defined by immediate if zero flag is 1.
+	???? iiii
+bx
+	Branch to offset defined by X if zero flag is 1.
+ji
+	Push Pc and Flags, then jump to address where immediate is upper 4 bits and X is lower 8.
+	???? iiii
+ret
+	Pop Flags and Pc.
+
+
+
+EXAMPLE PROGRAM:
+This program reads in 2 bytes, adds them together and returns the result.
+Functions are expected to preserve all but the X register.
+
+; Memory Map
+RAM = 0x0
+RXTX = 0xDFE
+STAT = 0xDFF
+ROM = 0xE00
+
+.ORG 0xE00
+
+loop:
+	; Call get to read in a byte
+	call get ; macro to set X to lower 8 bits and call ji with upper 4 bits of get's address
+		 ; cx, iml, imh, ji
+	; Store the byte into 0
+	ca
+	sti 0
+	; Get the second byte
+	call get
+	; Second byte is in A, first is at 0. Do the add.
+	add 0
+	; Store the value into UART TX.
+	cx
+	iml 0xE
+	imh 0xF
+	ste 0xD
+	; Jump back to loop to start over again
+	goto loop ; macro to set X to offset for getting to loop and then calling bx
+		  ; cx, iml, imh, bx
+
+; Waits for a byte to be available and then reads it. The result is stored in A.
+get:
+	; Push memory address 0 so we can store shift number in it
+	ca
+	ldi 0
+	push
+	; Store number to shift STAT by to get num of bytes ready to be read in
+	imh 0
+	iml 4
+	sti 0
+	; Prepare X with index of UART STAT
+	cx
+	imh 0xF
+	iml 0xF
+	ca
+loop$
+	; Load STAT and shift
+	lde 0xD
+	sh 0
+	; Branch if zero is set (there are no bytes ready to be read)
+	bi loop$
+	; Read UART RX
+	cx
+	imh 0xF
+	iml 0xE
+	ca
+	lde 0xD
+	; Return after popping address 0
+	cx
+	pop
+	sti 0
+	ret
+
+; Store the address to be loaded into PC upon power up.
+.ORG 0xFFE
+.BYTE LOWER(loop)
+.BYTE UPPER(loop)
