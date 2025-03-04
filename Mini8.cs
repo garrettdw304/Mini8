@@ -16,7 +16,8 @@
 
         private byte a;
         private byte x;
-        private byte stack; // TODO: Add special register to select which page stack is in and an instruction to move C to that register and that register to C. That register does not need to be able to be context though.
+        private byte stack;
+        private byte page; // TODO: Utilize
         private byte flags;
         private ushort pc;
         private byte tempContext;
@@ -91,15 +92,15 @@
         public Mini8(MemoryMap mem)
         {
             this.mem = mem;
-            pc = a = x = stack = flags = tempContext = 0;
+            pc = a = x = stack = page = flags = tempContext = 0;
             tempContextActive = tempContextActivated = false;
 
             instructions = new Instruction[256];
-            Set16(Iml, Imh, Nand, Nor, Xnor, Sh, Add, Sub, Bi, Ji, Sti, Ldi,
+            Set16(Iml, Imh, Nand, Nor, Xnor, Add, Sub, Bi, Je, Cal, Sti, Ldi,
                 Ste, Lde);
-            Set1(Push, Pop, Mac, Mxc, Msc, Mfc, Mca, Mcx, Mcs, Mcf, Ina, Inx,
-                Dea, Dex, Ca, Cx, Cs, Cf, Cta, Ctx, Cts, Ctf, Ze, Zo, Zc, Zn,
-                Bx, Ret);
+            Set1(Shl, Shr, Push, Pop, Mac, Mxc, Msc, Mpc, Mfc, Mca, Mcx, Mcs,
+                Mcp, Mcf, Ina, Inx, Dea, Dex, Ca, Cx, Cs, Cf, Cta, Ctx, Cts,
+                Ctf, Ze, Zo, Zc, Zn, Ret,  Nop);
         }
 
         public void Step()
@@ -123,6 +124,11 @@
         }
 
         #region Instructions
+        private void Nop(byte instruction)
+        {
+            
+        }
+
         private void Iml(byte instruction)
         {
             C = (byte)((C & 0b1111_0000) | (instruction & 0b0000_1111));
@@ -159,6 +165,11 @@
             C = stack;
         }
 
+        private void Mpc(byte instruction)
+        {
+            C = page;
+        }
+
         private void Mfc(byte instruction)
         {
             C = flags;
@@ -177,6 +188,11 @@
         private void Mcs(byte instruction)
         {
             stack = C;
+        }
+
+        private void Mcp(byte instruction)
+        {
+            page = C;
         }
 
         private void Mcf(byte instruction)
@@ -232,16 +248,6 @@
             Zero = a == 0;
         }
 
-        private void Sh(byte instruction)
-        {
-            sbyte rhs = (sbyte)GetRhs(instruction);
-            if (rhs < 0)
-                a >>= -rhs;
-            else
-                a <<= rhs;
-            Zero = a == 0;
-        }
-
         private void Add(byte instruction)
         {
             a += GetRhs(instruction);
@@ -253,6 +259,19 @@
             a -= GetRhs(instruction);
             Zero = a == 0;
         }
+
+        private void Shl(byte instruction)
+        {
+            a <<= a;
+            Zero = a == 0;
+        }
+
+        private void Shr(byte instruction)
+        {
+            a >>= a;
+            Zero = a == 0;
+        }
+
         private void Ina(byte instruction)
         {
             a++;
@@ -359,26 +378,26 @@
             pc = (ushort)(pc + offset);
         }
 
-        private void Bx(byte instruction)
+        private void Je(byte instruction)
         {
             if (!Zero)
                 return;
 
-            short offset = (sbyte)x;
+            ushort address = (ushort)((instruction << 8) | x);
+            address &= 0x0F_FF;
 
-            if (offset >= 0)
-                offset++;
-
-            pc = (ushort)(pc + offset);
+            // -1 because of pc increment at end of instruction.
+            pc = (ushort)(address - 1);
         }
 
-        private void Ji(byte instruction)
+        private void Cal(byte instruction)
         {
             PushForJump();
             ushort address = (ushort)((instruction << 8) | x);
             address &= 0x0F_FF;
 
-            pc = (ushort)(address - 1); // -1 because of pc increment at end of instruction.
+            // -1 because of pc increment at end of instruction.
+            pc = (ushort)(address - 1);
         }
 
         private void Ret(byte instruction)

@@ -5,18 +5,21 @@ REGISTERS
 A
 X
 Stack
+StackPage
 Flags
 Pc
 
 FLAGS
 zocd ddxx
-d - Don't Cares (not used yet)
 x - Context (0 = A, 1 = X, 2 = S, 3 = F)
-o - Overflow
+d - Don't Cares (not used yet)
 c - Carry
+o - Overflow
 z - Zero (Last result was zero)
 
 INSTRUCTIONS
+nop
+	Does nothing.
 iml
 	Loads an immediate value into the lower part of C.
 	???? iiii
@@ -39,10 +42,6 @@ xnor
 	A = A XNOR value.
 	???? aaaa
 	a - The address of value.
-sh
-	A = A SHIFT value. Negative value shifts right, positive value shifts left.
-	???? aaaa
-	a - The address of value.
 add
 	A = A + value.
 	???? aaaa
@@ -51,6 +50,10 @@ sub
 	Subtract from A.
 	???? aaaa
 	a - The address of value.
+shl
+	Shift A left once.
+shr
+	Shift A right once.
 ina
 	Increment A.
 inx
@@ -92,6 +95,8 @@ mxc
 	Move X to C.
 msc
 	Move Stack to C.
+mpc
+	Move StackPage to C.
 mfc
 	Move F to C.
 mca
@@ -100,6 +105,8 @@ mcx
 	Move C to X.
 mcs
 	Move C to Stack.
+mcp
+	Move C to StackPage.
 mcf
 	Move C to F.
 sti
@@ -127,82 +134,27 @@ zn
 bi
 	Branch to offset defined by immediate if zero flag is 1.
 	???? iiii
-bx
-	Branch to offset defined by X if zero flag is 1.
-ji
+je
+	Jump to an address defined by immediate and X if zero flag is 1.
+	???? iiii
+cal
 	Push Pc and Flags, then jump to address where immediate is upper 4 bits and X is lower 8.
 	???? iiii
 ret
 	Pop Flags and Pc.
 
-
-
-EXAMPLE PROGRAM:
-This program reads in 2 bytes, adds them together and returns the result.
-Functions are expected to preserve all but the X register.
-
-; Memory Map
-RAM = 0x0
-RXTX = 0xDFE
-STAT = 0xDFF
-ROM = 0xE00
-
-.ORG 0xE00
-
-loop:
-	; Call get to read in a byte
-	call get ; macro to set X to lower 8 bits and call ji with upper 4 bits of get's address
-		 ; cx, iml, imh, ji
-	; Store the byte into 0
-	ca
-	sti 0
-	; Get the second byte
-	call get
-	; Second byte is in A, first is at 0. Do the add.
-	add 0
-	; Store the value into UART TX.
-	cx
-	iml 0xE
-	imh 0xF
-	ste 0xD
-	; Jump back to loop to start over again
-	goto loop ; macro to set X to offset for getting to loop and then calling bx
-		  ; cx, iml, imh, bx
-
-; Waits for a byte to be available and then reads it. The result is stored in A.
-get:
-	; Push memory address 0 so we can store shift number in it
-	ca
-	ldi 0
-	push
-	; Store number to shift STAT by to get num of bytes ready to be read in
-	imh 0
-	iml 4
-	sti 0
-	; Prepare X with index of UART STAT
-	cx
-	imh 0xF
-	iml 0xF
-	ca
-loop$
-	; Load STAT and shift
-	lde 0xD
-	sh 0
-	; Branch if zero is set (there are no bytes ready to be read)
-	bi loop$
-	; Read UART RX
-	cx
-	imh 0xF
-	iml 0xE
-	ca
-	lde 0xD
-	; Return after popping address 0
-	cx
-	pop
-	sti 0
-	ret
-
-; Store the address to be loaded into PC upon power up.
-.ORG 0xFFE
-.BYTE LOWER(loop)
-.BYTE UPPER(loop)
+MACRO INSTRUCTIONS
+call <label>
+	cx, imh, iml, ze, cal
+	Sets context to X, loads X with the lower 8 bits of the label,
+	sets Zero flag and then calls cal to push state and jump to the function.
+jump <label>
+	cx, imh, iml, ze, je
+	Sets context to X, loads X with the lower 8 bits of the label,
+	sets Zero flag and then calls be to branch to the function.
+sh <direction(l|r) <count>
+	shl, shl, shl... | shr, shr, shr...
+	Generates count number of shift left or shift right instructions.
+imm <register> <value>
+	(ca | cx | cs | cf), imh, iml
+	Sets context to register and then loads an immediate.
